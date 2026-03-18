@@ -233,6 +233,126 @@ body::before {
   font-weight:600;
   cursor:pointer;
 }
+
+/* ===== USER / LOGIN ===== */
+.topbar {
+  position:fixed;
+  top:16px;
+  right:16px;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  z-index:5;
+}
+
+.chip {
+  font-size:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.09);
+  color:var(--text-secondary);
+  backdrop-filter:blur(16px) saturate(140%);
+}
+
+.chip strong {
+  color:var(--text);
+  font-weight:600;
+}
+
+.btn-ghost {
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(0,0,0,.12);
+  color:var(--text);
+  border-radius:999px;
+  padding:8px 12px;
+  cursor:pointer;
+  backdrop-filter:blur(16px) saturate(140%);
+}
+
+.btn-ghost:hover { transform:translateY(-.5px); }
+
+.login-overlay {
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:10;
+  background:rgba(0,0,0,.45);
+  backdrop-filter:blur(16px) saturate(160%);
+}
+
+.login-card {
+  width:min(440px, calc(100vw - 28px));
+  background:radial-gradient(circle at top left,#1b1c24,#050609);
+  border-radius:28px;
+  border:1px solid rgba(255,255,255,.06);
+  box-shadow:var(--shadow-soft);
+  padding:18px;
+}
+
+.login-title {
+  font-size:18px;
+  font-weight:700;
+  letter-spacing:.02em;
+}
+
+.login-subtitle {
+  margin-top:6px;
+  font-size:12px;
+  color:var(--text-secondary);
+}
+
+.login-row {
+  margin-top:12px;
+  display:flex;
+  gap:10px;
+}
+
+.login-input {
+  flex:1;
+  border:1px solid var(--border-subtle);
+  background:rgba(8,8,14,.9);
+  color:var(--text);
+  border-radius:14px;
+  padding:10px 12px;
+  outline:none;
+}
+
+.login-primary {
+  border:none;
+  border-radius:14px;
+  padding:10px 12px;
+  background:linear-gradient(135deg,#0a84ff,#64d2ff);
+  color:#000;
+  font-weight:700;
+  cursor:pointer;
+}
+
+.login-list {
+  margin-top:12px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.user-pill {
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.05);
+  color:var(--text);
+  border-radius:999px;
+  padding:8px 10px;
+  cursor:pointer;
+}
+
+.user-pill:hover { transform:translateY(-.5px); }
+
+.user-pill.danger {
+  color:var(--danger);
+  border-color:rgba(255,69,58,.25);
+  background:rgba(255,69,58,.12);
+}
 </style>
 </head>
 <link rel="icon" type="image/svg+xml"
@@ -248,20 +368,82 @@ body::before {
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
 const STORE='vibe_board_v1';
+const ACTIVE_USER_KEY='vibe_board_active_user_v1';
+const USERS_KEY='vibe_board_users_v1';
 const order={high:3,medium:2,low:1};
 const next=p=>p==='high'?'medium':p==='medium'?'low':'high';
+const normUser=(s)=>String(s||'').trim().toLowerCase();
+const userStoreKey=(u)=>`${STORE}:user:${normUser(u)}`;
 
 function App(){
   const [lists,setLists]=useState([]);
   const dragTask=useRef(null);
+  const [user,setUser]=useState('');
+  const [knownUsers,setKnownUsers]=useState([]);
 
   useEffect(()=>{
-    const raw=localStorage.getItem(STORE);
-    if(raw) setLists(JSON.parse(raw));
-    else addList('Vibe Tasks');
+    const uRaw=localStorage.getItem(USERS_KEY);
+    if(uRaw){
+      try { setKnownUsers(JSON.parse(uRaw) || []); } catch {}
+    }
+
+    const active=localStorage.getItem(ACTIVE_USER_KEY);
+    if(active) setUser(active);
   },[]);
 
-  useEffect(()=>localStorage.setItem(STORE,JSON.stringify(lists)),[lists]);
+  // Load lists whenever user changes
+  useEffect(()=>{
+    if(!user) return;
+    const raw=localStorage.getItem(userStoreKey(user));
+    if(raw){
+      try { setLists(JSON.parse(raw)); }
+      catch { setLists([]); }
+    } else {
+      setLists([]);
+      // default list for new users
+      setTimeout(()=>addList('Vibe Tasks'),0);
+    }
+  },[user]);
+
+  // Persist lists for current user
+  useEffect(()=>{
+    if(!user) return;
+    localStorage.setItem(userStoreKey(user),JSON.stringify(lists));
+  },[lists,user]);
+
+  // Persist active user + users list
+  useEffect(()=>{
+    if(!user) return;
+    localStorage.setItem(ACTIVE_USER_KEY,user);
+  },[user]);
+
+  useEffect(()=>{
+    localStorage.setItem(USERS_KEY,JSON.stringify(knownUsers));
+  },[knownUsers]);
+
+  function login(name){
+    const u=normUser(name);
+    if(!u) return;
+    setUser(u);
+    setKnownUsers(prev=>prev.includes(u)?prev:[...prev,u].sort());
+  }
+
+  function logout(){
+    setUser('');
+    setLists([]);
+  }
+
+  function deleteUser(name){
+    const u=normUser(name);
+    if(!u) return;
+    if(!confirm(`Delete user "${u}" and all their local lists?`)) return;
+    localStorage.removeItem(userStoreKey(u));
+    setKnownUsers(prev=>prev.filter(x=>x!==u));
+    if(user===u){
+      localStorage.removeItem(ACTIVE_USER_KEY);
+      logout();
+    }
+  }
 
   function addList(title){
     setLists(l=>[...l,{id:crypto.randomUUID(),title,x:80,y:80,tasks:[]}]);
@@ -333,6 +515,21 @@ function App(){
   }
 
   return <>
+    {!!user && (
+      <div className="topbar">
+        <div className="chip">User: <strong>{user}</strong></div>
+        <button className="btn-ghost" onClick={logout}>Switch</button>
+      </div>
+    )}
+
+    {!user && (
+      <LoginOverlay
+        users={knownUsers}
+        onLogin={login}
+        onDeleteUser={deleteUser}
+      />
+    )}
+
     {lists.map(list=>(
       <div
         key={list.id}
@@ -385,8 +582,62 @@ function App(){
         </div>
       </div>
     ))}
-    <button id="add-list" onClick={()=>{const t=prompt('List name');t&&addList(t)}}>+ List</button>
+    {!!user && (
+      <button id="add-list" onClick={()=>{const t=prompt('List name');t&&addList(t)}}>+ List</button>
+    )}
   </>;
+}
+
+function LoginOverlay({users,onLogin,onDeleteUser}){
+  const nameRef=useRef();
+  return (
+    <div className="login-overlay">
+      <div className="login-card">
+        <div className="login-title">Choose a user</div>
+        <div className="login-subtitle">Local-only profiles. Each user has separate saved lists on this device.</div>
+
+        <div className="login-row">
+          <input
+            className="login-input"
+            ref={nameRef}
+            placeholder="Type a username…"
+            autoFocus
+            onKeyDown={(e)=>{
+              if(e.key==='Enter'){
+                onLogin(nameRef.current.value);
+                nameRef.current.value='';
+              }
+            }}
+          />
+          <button
+            className="login-primary"
+            onClick={()=>{
+              onLogin(nameRef.current.value);
+              nameRef.current.value='';
+            }}
+          >
+            Continue
+          </button>
+        </div>
+
+        {users?.length ? (
+          <div className="login-list">
+            {users.map(u=>(
+              <button key={u} className="user-pill" onClick={()=>onLogin(u)}>
+                {u}
+              </button>
+            ))}
+            <button className="user-pill danger" onClick={()=>{
+              const target=prompt('Delete which user? Type exact username');
+              if(target) onDeleteUser(target);
+            }}>
+              Delete user…
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function AddRow({onAdd}){
