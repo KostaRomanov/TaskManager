@@ -13,6 +13,7 @@
 <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
 <style>
 /* ===== DESIGN TOKENS (from your file) ===== */
@@ -234,7 +235,7 @@ body::before {
   cursor:pointer;
 }
 
-/* ===== USER / LOGIN ===== */
+/* ===== USER / LOGIN (cloud) ===== */
 .topbar {
   position:fixed;
   top:16px;
@@ -320,6 +321,40 @@ body::before {
   outline:none;
 }
 
+.login-stack {
+  margin-top:12px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.login-input.full { width:100%; }
+
+.login-actions {
+  margin-top:12px;
+  display:flex;
+  gap:10px;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.login-link {
+  background:none;
+  border:none;
+  color:var(--text-secondary);
+  cursor:pointer;
+  padding:0;
+}
+
+.login-link:hover { color:var(--text); }
+
+.login-note {
+  margin-top:10px;
+  font-size:12px;
+  color:var(--text-secondary);
+  line-height:1.35;
+}
+
 .login-primary {
   border:none;
   border-radius:14px;
@@ -330,29 +365,6 @@ body::before {
   cursor:pointer;
 }
 
-.login-list {
-  margin-top:12px;
-  display:flex;
-  flex-wrap:wrap;
-  gap:8px;
-}
-
-.user-pill {
-  border:1px solid rgba(255,255,255,.10);
-  background:rgba(255,255,255,.05);
-  color:var(--text);
-  border-radius:999px;
-  padding:8px 10px;
-  cursor:pointer;
-}
-
-.user-pill:hover { transform:translateY(-.5px); }
-
-.user-pill.danger {
-  color:var(--danger);
-  border-color:rgba(255,69,58,.25);
-  background:rgba(255,69,58,.12);
-}
 </style>
 </head>
 <link rel="icon" type="image/svg+xml"
@@ -368,94 +380,117 @@ body::before {
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
 const STORE='vibe_board_v1';
-const ACTIVE_USER_KEY='vibe_board_active_user_v1';
-const USERS_KEY='vibe_board_users_v1';
+// Fill these from your Supabase project settings (Project URL + anon public key)
+const SUPABASE_URL = '';
+const SUPABASE_ANON_KEY = '';
 const order={high:3,medium:2,low:1};
 const next=p=>p==='high'?'medium':p==='medium'?'low':'high';
-const normUser=(s)=>String(s||'').trim().toLowerCase();
-const userStoreKey=(u)=>`${STORE}:user:${normUser(u)}`;
+const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 function App(){
   const [lists,setLists]=useState([]);
   const dragTask=useRef(null);
-  const [user,setUser]=useState('');
-  const [knownUsers,setKnownUsers]=useState([]);
+  const [session,setSession]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const saveTimer=useRef(null);
 
   useEffect(()=>{
-    const uRaw=localStorage.getItem(USERS_KEY);
-    if(uRaw){
-      try { setKnownUsers(JSON.parse(uRaw) || []); } catch {}
+    let mounted=true;
+    async function init(){
+      if(!sb){
+        setLoading(false);
+        return;
+      }
+      const { data } = await sb.auth.getSession();
+      if(!mounted) return;
+      setSession(data.session);
+      setLoading(false);
+      sb.auth.onAuthStateChange((_evt, newSession)=>{
+        setSession(newSession);
+      });
     }
-
-    const active=localStorage.getItem(ACTIVE_USER_KEY);
-    if(active) setUser(active);
+    init();
+    return ()=>{ mounted=false; };
   },[]);
 
-  // Load lists whenever user changes
-  useEffect(()=>{
-    if(!user) return;
-    const raw=localStorage.getItem(userStoreKey(user));
-    if(raw){
-      try { setLists(JSON.parse(raw)); }
-      catch { setLists([]); }
-    } else {
-      setLists([]);
-      // default list for new users
-      setTimeout(()=>addList('Vibe Tasks'),0);
+  async function loadFromCloud(){
+    if(!sb || !session?.user?.id) return;
+    setLoading(true);
+    const { data, error } = await sb
+      .from('vibe_boards')
+      .select('data')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if(error){
+      console.warn(error);
+      setLoading(false);
+      return;
     }
-  },[user]);
-
-  // Persist lists for current user
-  useEffect(()=>{
-    if(!user) return;
-    localStorage.setItem(userStoreKey(user),JSON.stringify(lists));
-  },[lists,user]);
-
-  // Persist active user + users list
-  useEffect(()=>{
-    if(!user) return;
-    localStorage.setItem(ACTIVE_USER_KEY,user);
-  },[user]);
-
-  useEffect(()=>{
-    localStorage.setItem(USERS_KEY,JSON.stringify(knownUsers));
-  },[knownUsers]);
-
-  function login(name){
-    const u=normUser(name);
-    if(!u) return;
-    setUser(u);
-    setKnownUsers(prev=>prev.includes(u)?prev:[...prev,u].sort());
+    if(data?.data){
+      setLists(data.data);
+      setLoading(false);
+      return;
+    }
+    // First time: create a default list and save it
+    const initial=[{id:crypto.randomUUID(),title:'Vibe Tasks',x:80,y:80,tasks:[]}];
+    setLists(initial);
+    await sb.from('vibe_boards').upsert({ user_id: session.user.id, data: initial });
+    setLoading(false);
   }
 
-  function logout(){
-    setUser('');
+  useEffect(()=>{
+    if(!sb) return;
+    if(!session){
+      setLists([]);
+      return;
+    }
+    loadFromCloud();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session?.user?.id]);
+
+  function scheduleSave(nextLists){
+    if(!sb || !session?.user?.id) return;
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async ()=>{
+      try{
+        await sb.from('vibe_boards').upsert({
+          user_id: session.user.id,
+          data: nextLists
+        });
+      } catch(e){
+        console.warn(e);
+      }
+    }, 250);
+  }
+
+  function setListsAndSave(updater){
+    setLists(prev=>{
+      const nextState = typeof updater==='function' ? updater(prev) : updater;
+      scheduleSave(nextState);
+      return nextState;
+    });
+  }
+
+  async function logout(){
+    if(!sb) return;
+    await sb.auth.signOut();
+    setSession(null);
     setLists([]);
   }
 
-  function deleteUser(name){
-    const u=normUser(name);
-    if(!u) return;
-    if(!confirm(`Delete user "${u}" and all their local lists?`)) return;
-    localStorage.removeItem(userStoreKey(u));
-    setKnownUsers(prev=>prev.filter(x=>x!==u));
-    if(user===u){
-      localStorage.removeItem(ACTIVE_USER_KEY);
-      logout();
-    }
-  }
-
   function addList(title){
-    setLists(l=>[...l,{id:crypto.randomUUID(),title,x:80,y:80,tasks:[]}]);
+    setListsAndSave(l=>[...l,{id:crypto.randomUUID(),title,x:80,y:80,tasks:[]}]);
   }
 
   function updateList(id,p){
-    setLists(l=>l.map(x=>x.id===id?{...x,...p}:x));
+    setListsAndSave(l=>l.map(x=>x.id===id?{...x,...p}:x));
   }
 
   function addTask(id,text,priority){
     if(!text.trim())return;
-    setLists(l=>l.map(x=>
+    setListsAndSave(l=>l.map(x=>
       x.id===id
         ? {...x,tasks:[...x.tasks,{
             id:crypto.randomUUID(),
@@ -469,7 +504,7 @@ function App(){
   }
 
   function updatePriority(lid,tid){
-    setLists(l=>l.map(x=>
+    setListsAndSave(l=>l.map(x=>
       x.id===lid
         ? {...x,tasks:x.tasks.map(t=>t.id===tid?{...t,priority:next(t.priority)}:t)}
         : x
@@ -477,7 +512,7 @@ function App(){
   }
 
   function toggle(lid,tid){
-    setLists(l=>l.map(x=>
+    setListsAndSave(l=>l.map(x=>
       x.id===lid
         ? {...x,tasks:x.tasks.map(t=>t.id===tid?{...t,done:!t.done}:t)}
         : x
@@ -485,7 +520,7 @@ function App(){
   }
 
   function delTask(lid,tid){
-    setLists(l=>l.map(x=>
+    setListsAndSave(l=>l.map(x=>
       x.id===lid?{...x,tasks:x.tasks.filter(t=>t.id!==tid)}:x
     ));
   }
@@ -515,19 +550,36 @@ function App(){
   }
 
   return <>
-    {!!user && (
+    {!!session?.user && (
       <div className="topbar">
-        <div className="chip">User: <strong>{user}</strong></div>
+        <div className="chip">Signed in: <strong>{session.user.email || session.user.id.slice(0,8)}</strong></div>
         <button className="btn-ghost" onClick={logout}>Switch</button>
       </div>
     )}
 
-    {!user && (
-      <LoginOverlay
-        users={knownUsers}
-        onLogin={login}
-        onDeleteUser={deleteUser}
-      />
+    {!sb && (
+      <div className="login-overlay">
+        <div className="login-card">
+          <div className="login-title">Connect Supabase</div>
+          <div className="login-subtitle">To sync across devices, paste your Supabase URL + anon key into the top of this file.</div>
+          <div className="login-note">
+            Look for <strong>SUPABASE_URL</strong> and <strong>SUPABASE_ANON_KEY</strong> inside the script.
+          </div>
+        </div>
+      </div>
+    )}
+
+    {!!sb && !session && !loading && (
+      <AuthOverlay />
+    )}
+
+    {loading && !!sb && (
+      <div className="login-overlay">
+        <div className="login-card">
+          <div className="login-title">Loading…</div>
+          <div className="login-subtitle">Syncing your board</div>
+        </div>
+      </div>
     )}
 
     {lists.map(list=>(
@@ -582,59 +634,79 @@ function App(){
         </div>
       </div>
     ))}
-    {!!user && (
+    {!!session?.user && (
       <button id="add-list" onClick={()=>{const t=prompt('List name');t&&addList(t)}}>+ List</button>
     )}
   </>;
 }
 
-function LoginOverlay({users,onLogin,onDeleteUser}){
-  const nameRef=useRef();
+function AuthOverlay(){
+  const [mode,setMode]=useState('signin'); // signin | signup
+  const [email,setEmail]=useState('');
+  const [password,setPassword]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState('');
+
+  async function submit(){
+    setErr('');
+    if(!sb) return;
+    const e=email.trim();
+    if(!e || !password) { setErr('Enter email and password.'); return; }
+    setBusy(true);
+    try{
+      if(mode==='signup'){
+        const { error } = await sb.auth.signUp({ email: e, password });
+        if(error) throw error;
+      } else {
+        const { error } = await sb.auth.signInWithPassword({ email: e, password });
+        if(error) throw error;
+      }
+    } catch(ex){
+      setErr(ex?.message || 'Auth error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="login-overlay">
       <div className="login-card">
-        <div className="login-title">Choose a user</div>
-        <div className="login-subtitle">Local-only profiles. Each user has separate saved lists on this device.</div>
+        <div className="login-title">{mode==='signup' ? 'Create account' : 'Sign in'}</div>
+        <div className="login-subtitle">Sync your lists across devices.</div>
 
-        <div className="login-row">
+        <div className="login-stack">
           <input
-            className="login-input"
-            ref={nameRef}
-            placeholder="Type a username…"
+            className="login-input full"
+            value={email}
+            onChange={(e)=>setEmail(e.target.value)}
+            placeholder="Email"
             autoFocus
-            onKeyDown={(e)=>{
-              if(e.key==='Enter'){
-                onLogin(nameRef.current.value);
-                nameRef.current.value='';
-              }
-            }}
+            autoComplete="email"
           />
-          <button
-            className="login-primary"
-            onClick={()=>{
-              onLogin(nameRef.current.value);
-              nameRef.current.value='';
-            }}
-          >
-            Continue
+          <input
+            className="login-input full"
+            value={password}
+            onChange={(e)=>setPassword(e.target.value)}
+            placeholder="Password"
+            type="password"
+            autoComplete={mode==='signup' ? 'new-password' : 'current-password'}
+            onKeyDown={(e)=>{ if(e.key==='Enter') submit(); }}
+          />
+          <button className="login-primary" onClick={submit} disabled={busy}>
+            {busy ? '…' : (mode==='signup' ? 'Create & sign in' : 'Sign in')}
           </button>
         </div>
 
-        {users?.length ? (
-          <div className="login-list">
-            {users.map(u=>(
-              <button key={u} className="user-pill" onClick={()=>onLogin(u)}>
-                {u}
-              </button>
-            ))}
-            <button className="user-pill danger" onClick={()=>{
-              const target=prompt('Delete which user? Type exact username');
-              if(target) onDeleteUser(target);
-            }}>
-              Delete user…
-            </button>
-          </div>
-        ) : null}
+        <div className="login-actions">
+          <button className="login-link" onClick={()=>setMode(mode==='signup'?'signin':'signup')}>
+            {mode==='signup' ? 'I already have an account' : 'Create an account'}
+          </button>
+          {err ? <div className="login-note" style={{color:'var(--danger)'}}>{err}</div> : <span />}
+        </div>
+
+        <div className="login-note">
+          Your lists are stored in Supabase for your account. Deploy anywhere (GitHub Pages, Vercel, etc.) and they’ll sync.
+        </div>
       </div>
     </div>
   );
