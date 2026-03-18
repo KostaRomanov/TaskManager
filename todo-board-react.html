@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Vibe Board</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<!-- Nicer typography (still fast): DM Sans -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+/* ===== DESIGN TOKENS (from your file) ===== */
+:root {
+  --bg:#050608;
+  --bg-elevated:#111217;
+  --accent:#0a84ff;
+  --text:#f5f5f7;
+  --text-secondary:#8e8e93;
+  --border-subtle:#2c2c34;
+  --danger:#ff453a;
+  --radius-lg:18px;
+  --radius-sm:10px;
+  --shadow-soft:0 18px 45px rgba(0,0,0,.85);
+}
+
+/* ===== GLOBAL ===== */
+* { box-sizing:border-box }
+body {
+  margin:0;
+  background:
+    radial-gradient(900px 520px at 15% 10%, rgba(100,210,255,.20), transparent 55%),
+    radial-gradient(760px 520px at 85% 25%, rgba(10,132,255,.18), transparent 58%),
+    radial-gradient(820px 640px at 35% 95%, rgba(48,209,88,.10), transparent 62%),
+    radial-gradient(circle at top,#151726,#050608);
+  color:var(--text);
+  font-family:"DM Sans",-apple-system,BlinkMacSystemFont,system-ui;
+  overflow:hidden;
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background:
+      radial-gradient(900px 520px at 15% 10%, rgba(10,132,255,.14), transparent 55%),
+      radial-gradient(760px 520px at 85% 25%, rgba(94,92,230,.10), transparent 58%),
+      radial-gradient(820px 640px at 35% 95%, rgba(48,209,88,.08), transparent 62%),
+      radial-gradient(circle at top,#ffffff,#d2d2d7);
+  }
+}
+
+body::before {
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:.07;
+  mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+}
+
+#root {
+  width:100vw;
+  height:100vh;
+  position:relative;
+}
+
+/* ===== LIST CARD ===== */
+.list {
+  position:absolute;
+  width:420px;
+  background:radial-gradient(circle at top left,#1b1c24,#050609);
+  border-radius:28px;
+  box-shadow:var(--shadow-soft);
+  border:1px solid rgba(255,255,255,.04);
+  padding:18px 18px 12px;
+  backdrop-filter:blur(26px) saturate(145%);
+  cursor:grab;
+}
+
+.list-header {
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+  margin-bottom:12px;
+}
+
+.list-title {
+  font-size:20px;
+  font-weight:600;
+  cursor:pointer;
+}
+
+/* ===== ADD ROW ===== */
+.add-row {
+  margin-top:10px;
+  background:rgba(8,8,14,.9);
+  border-radius:18px;
+  padding:4px 4px 4px 12px;
+  display:flex;
+  align-items:center;
+  border:1px solid var(--border-subtle);
+}
+
+.add-row input {
+  flex:1;
+  border:none;
+  background:transparent;
+  outline:none;
+  color:var(--text);
+  font-size:14px;
+}
+
+.add-row select {
+  background:transparent;
+  border:none;
+  color:var(--text-secondary);
+  font-size:12px;
+}
+
+.add-row button {
+  border:none;
+  border-radius:999px;
+  padding:6px 12px;
+  background:linear-gradient(135deg,#0a84ff,#64d2ff);
+  color:#000;
+  font-size:11px;
+  font-weight:600;
+  cursor:pointer;
+}
+
+/* ===== TASKS ===== */
+.tasks {
+  margin-top:14px;
+}
+
+.task {
+  display:flex;
+  align-items:center;
+  padding:7px 9px;
+  border-radius:16px;
+  margin-bottom:4px;
+  background:rgba(9,9,15,.96);
+  border-left:4px solid transparent;
+  transition:.16s ease-out;
+}
+
+.task:hover {
+  transform:translateY(-.5px);
+  background:rgba(14,14,22,.98);
+}
+
+.task.high { border-left-color:#ff453a }
+.task.medium { border-left-color:#ffd60a }
+.task.low { border-left-color:#30d158 }
+
+.task.done {
+  opacity:.65;
+}
+
+.task.done .task-text {
+  text-decoration:line-through;
+}
+
+.checkbox {
+  width:19px;
+  height:19px;
+  border-radius:999px;
+  border:1px solid #3a3a46;
+  margin-right:10px;
+  cursor:pointer;
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  user-select:none;
+}
+
+.task.done .checkbox {
+  border-color:rgba(48,209,88,.9);
+  background:radial-gradient(circle at top,#30d158,#1e963a);
+  box-shadow:0 0 12px rgba(48,209,88,.55);
+}
+
+.task.done .checkbox::after {
+  content:"✓";
+  font-size:12px;
+  font-weight:700;
+  line-height:1;
+  color:#050608;
+  transform:translateY(-0.5px);
+}
+
+.task-text {
+  flex:1;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.priority-dot {
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  margin-left:8px;
+  cursor:pointer;
+}
+.priority-dot.high { background:#ff453a }
+.priority-dot.medium { background:#ffd60a }
+.priority-dot.low { background:#30d158 }
+
+.delete {
+  background:none;
+  border:none;
+  color:var(--danger);
+  margin-left:8px;
+  cursor:pointer;
+}
+
+/* ===== ADD LIST BTN ===== */
+#add-list {
+  position:fixed;
+  bottom:18px;
+  right:18px;
+  border:none;
+  border-radius:999px;
+  padding:12px 18px;
+  background:linear-gradient(135deg,#0a84ff,#64d2ff);
+  font-weight:600;
+  cursor:pointer;
+}
+</style>
+</head>
+<link rel="icon" type="image/svg+xml"
+      href="data:image/svg+xml,
+      <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+        <rect width='100' height='100' rx='22' fill='%230a84ff'/>
+        <path d='M28 52 L44 68 L74 34' stroke='white' stroke-width='10' fill='none' stroke-linecap='round' stroke-linejoin='round'/>
+      </svg>">
+
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState,useEffect,useRef} = React;
+const STORE='vibe_board_v1';
+const order={high:3,medium:2,low:1};
+const next=p=>p==='high'?'medium':p==='medium'?'low':'high';
+
+function App(){
+  const [lists,setLists]=useState([]);
+  const dragTask=useRef(null);
+
+  useEffect(()=>{
+    const raw=localStorage.getItem(STORE);
+    if(raw) setLists(JSON.parse(raw));
+    else addList('Vibe Tasks');
+  },[]);
+
+  useEffect(()=>localStorage.setItem(STORE,JSON.stringify(lists)),[lists]);
+
+  function addList(title){
+    setLists(l=>[...l,{id:crypto.randomUUID(),title,x:80,y:80,tasks:[]}]);
+  }
+
+  function updateList(id,p){
+    setLists(l=>l.map(x=>x.id===id?{...x,...p}:x));
+  }
+
+  function addTask(id,text,priority){
+    if(!text.trim())return;
+    setLists(l=>l.map(x=>
+      x.id===id
+        ? {...x,tasks:[...x.tasks,{
+            id:crypto.randomUUID(),
+            text,
+            priority,
+            done:false,
+            created:Date.now()
+          }]}
+        : x
+    ));
+  }
+
+  function updatePriority(lid,tid){
+    setLists(l=>l.map(x=>
+      x.id===lid
+        ? {...x,tasks:x.tasks.map(t=>t.id===tid?{...t,priority:next(t.priority)}:t)}
+        : x
+    ));
+  }
+
+  function toggle(lid,tid){
+    setLists(l=>l.map(x=>
+      x.id===lid
+        ? {...x,tasks:x.tasks.map(t=>t.id===tid?{...t,done:!t.done}:t)}
+        : x
+    ));
+  }
+
+  function delTask(lid,tid){
+    setLists(l=>l.map(x=>
+      x.id===lid?{...x,tasks:x.tasks.filter(t=>t.id!==tid)}:x
+    ));
+  }
+
+  function makeDrag(el,list){
+    let ox,oy;
+    el.onmousedown=e=>{
+      ox=e.clientX-list.x; oy=e.clientY-list.y;
+      window.onmousemove=ev=>{
+        list.x=ev.clientX-ox;
+        list.y=ev.clientY-oy;
+        el.style.left=list.x+'px';
+        el.style.top=list.y+'px';
+      };
+      window.onmouseup=()=>window.onmousemove=null;
+    };
+  }
+
+  return <>
+    {lists.map(list=>(
+      <div
+        key={list.id}
+        className="list"
+        style={{left:list.x,top:list.y}}
+        ref={el=>el&&makeDrag(el,list)}
+        onDragOver={e=>e.preventDefault()}
+        onDrop={()=>{
+          if(!dragTask.current)return;
+          const {task,from}=dragTask.current;
+          setLists(l=>l.map(x=>{
+            if(x.id===from) return {...x,tasks:x.tasks.filter(t=>t.id!==task.id)};
+            if(x.id===list.id) return {...x,tasks:[...x.tasks,task]};
+            return x;
+          }));
+          dragTask.current=null;
+        }}
+      >
+        <div className="list-header">
+          <div className="list-title"
+            onClick={()=>{
+              const t=prompt('Rename list',list.title);
+              t&&updateList(list.id,{title:t});
+            }}
+          >{list.title}</div>
+          <button className="delete" onClick={()=>confirm('Delete list?')&&setLists(l=>l.filter(x=>x.id!==list.id))}>✕</button>
+        </div>
+
+        <AddRow onAdd={(t,p)=>addTask(list.id,t,p)} />
+
+        <div className="tasks">
+          {[...list.tasks]
+            .sort((a,b)=>order[b.priority]-order[a.priority]||a.created-b.created)
+            .map(t=>(
+              <div
+                key={t.id}
+                className={`task ${t.priority}${t.done?' done':''}`}
+                draggable
+                onDragStart={()=>dragTask.current={task:t,from:list.id}}
+              >
+                <div className="checkbox" onClick={()=>toggle(list.id,t.id)} />
+                <div className="task-text">{t.text}</div>
+                <div
+                  className={`priority-dot ${t.priority}`}
+                  onClick={()=>updatePriority(list.id,t.id)}
+                />
+                <button className="delete" onClick={()=>delTask(list.id,t.id)}>⌫</button>
+              </div>
+            ))}
+        </div>
+      </div>
+    ))}
+    <button id="add-list" onClick={()=>{const t=prompt('List name');t&&addList(t)}}>+ List</button>
+  </>;
+}
+
+function AddRow({onAdd}){
+  const t=useRef(),p=useRef();
+  return (
+    <div className="add-row">
+      <input
+        ref={t}
+        placeholder="What’s the next tiny win?"
+        onKeyDown={e=>{
+          if(e.key==='Enter'){
+            onAdd(t.current.value,p.current.value);
+            t.current.value='';
+          }
+        }}
+      />
+      <select ref={p} defaultValue="medium">
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <button onClick={()=>{
+        onAdd(t.current.value,p.current.value);
+        t.current.value='';
+      }}>Add</button>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
