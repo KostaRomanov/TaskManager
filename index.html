@@ -309,16 +309,26 @@ function App(){
   }
 
   function makeDrag(el,list){
-    let ox,oy;
-    el.onmousedown=e=>{
-      ox=e.clientX-list.x; oy=e.clientY-list.y;
-      window.onmousemove=ev=>{
-        list.x=ev.clientX-ox;
-        list.y=ev.clientY-oy;
-        el.style.left=list.x+'px';
-        el.style.top=list.y+'px';
+    let ox, oy;
+    let latestX = list.x;
+    let latestY = list.y;
+
+    el.onmousedown = (e) => {
+      ox = e.clientX - list.x;
+      oy = e.clientY - list.y;
+
+      window.onmousemove = (ev) => {
+        latestX = ev.clientX - ox;
+        latestY = ev.clientY - oy;
+        el.style.left = latestX + 'px';
+        el.style.top = latestY + 'px';
       };
-      window.onmouseup=()=>window.onmousemove=null;
+
+      window.onmouseup = () => {
+        window.onmousemove = null;
+        // Persist final position via React state (so localStorage saves it)
+        updateList(list.id, { x: latestX, y: latestY });
+      };
     };
   }
 
