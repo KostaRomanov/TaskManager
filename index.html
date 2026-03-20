@@ -381,8 +381,8 @@ body::before {
 const {useState,useEffect,useRef} = React;
 const STORE='vibe_board_v1';
 // Fill these from your Supabase project settings (Project URL + anon public key)
-const SUPABASE_URL = '';
-const SUPABASE_ANON_KEY = '';
+const SUPABASE_URL = 'https://qutssfgvbgimhoxnveqw.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_g9OMlQt6WaIifFexrs9FPA_2Ln0T-ho';
 const order={high:3,medium:2,low:1};
 const next=p=>p==='high'?'medium':p==='medium'?'low':'high';
 const sb = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
